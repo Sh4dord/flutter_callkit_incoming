@@ -43,6 +43,23 @@
             </intent-filter>
         </activity>
         <activity
+            android:name="com.hiennv.flutter_callkit_incoming.CallkitIncomingActivityWimi"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:turnScreenOn="true"
+            android:configChanges="orientation"
+            android:exported="true"
+            android:launchMode="singleInstance"
+            android:allowTaskReparenting="false"
+            android:theme="@style/CallkitIncomingTheme"
+            android:permission="${applicationId}.PERMISSION_CALL">
+            <intent-filter>
+                <action android:name="${applicationId}.com.hiennv.flutter_callkit_incoming.ACTION_CALL_INCOMING" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <activity
             android:exported="false"
             android:theme="@style/TranslucentTheme"
             android:showWhenLocked="true"
