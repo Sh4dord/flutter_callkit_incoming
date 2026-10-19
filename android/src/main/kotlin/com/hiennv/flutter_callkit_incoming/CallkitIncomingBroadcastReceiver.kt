@@ -3,6 +3,7 @@ package com.hiennv.flutter_callkit_incoming
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.KeyguardManager
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -17,6 +18,8 @@ import android.text.TextUtils
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.Person
+import androidx.core.graphics.drawable.IconCompat
 import androidx.core.content.ContextCompat
 
 class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
@@ -24,6 +27,9 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "CallkitIncomingReceiver"
         var silenceEvents = false
+
+        /** Caller picture request of the discrete notification (see showDiscreteIncomingNotification). */
+        private var avatarTarget: SafeTarget? = null
 
         fun getIntent(context: Context, action: String, data: Bundle?) =
             Intent().apply {
@@ -193,8 +199,8 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
                         sendEventFlutter(CallkitConstants.ACTION_CALL_INCOMING, data)
                         addCall(context, incomingData)
                     } else {
-                        // Screen is on — show a discrete heads-up notification WITHOUT
-                        // fullScreenIntent so the app is never forced to the foreground.
+                        // Screen is on — show a discrete heads-up notification; the app is
+                        // never forced to the foreground (see showDiscreteIncomingNotification).
                         showDiscreteIncomingNotification(context, data)
                         sendEventFlutter(CallkitConstants.ACTION_CALL_INCOMING, data)
                         addCall(context, incomingData)
@@ -305,9 +311,10 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
 
     /**
      * Show a discrete heads-up notification for an incoming call when the screen is on.
-     * Unlike [CallkitNotificationManager.showIncomingNotification], this method does NOT set a
-     * fullScreenIntent or a contentIntent that opens an activity, so the app is never forced to the
-     * foreground when the notification appears or when the user taps Decline.
+     * Unlike [CallkitNotificationManager.showIncomingNotification], the app is never forced to the
+     * foreground when the notification appears or when the user taps Decline: no contentIntent, and
+     * the fullScreenIntent (Android 12+, required by CallStyle) is shown as a heads-up notification
+     * because the device is in use.
      */
     @SuppressLint("MissingPermission")
     private fun showDiscreteIncomingNotification(context: Context, data: Bundle) {
@@ -358,15 +365,72 @@ class CallkitIncomingBroadcastReceiver : BroadcastReceiver() {
             .setSound(null)
             .setTimeoutAfter(duration)
             .setDeleteIntent(timeoutPendingIntent)
-            // No setContentIntent  → tapping the notification body does nothing (no app launch)
-            // No setFullScreenIntent → the notification stays discrete, never forces the app to
-            //                          the foreground (avoids launching CallkitIncomingActivity)
-            .addAction(R.drawable.ic_decline, declineLabel, declinePendingIntent)
-            .addAction(R.drawable.ic_accept,  acceptLabel,  acceptPendingIntent)
+            // No setContentIntent → tapping the notification body does nothing (no app launch)
+            // Only alert once: the avatar update below must not re-ring.
+            .setOnlyAlertOnce(true)
 
         try { builder.color = Color.parseColor(actionColor) } catch (_: Exception) {}
 
+        // WhatsApp-style avatar (caller picture + app badge): default picture right
+        // away, caller picture once downloaded.
+        // - Android 12+: CallStyle → avatar on the LEFT, system Decline / Answer
+        //   buttons. CallStyle is rejected without a fullScreenIntent (or a
+        //   foreground service); this branch only runs while the device is in
+        //   use, where the system shows a full-screen intent as a heads-up
+        //   notification and does not launch the activity.
+        // - Older: standard layout, avatar as large icon (right), own actions.
+        val avatarSize =
+            context.resources.getDimensionPixelSize(android.R.dimen.notification_large_icon_width)
+        val useCallStyle = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        val callerName = caller.ifEmpty { context.applicationInfo.loadLabel(context.packageManager).toString() }
+        val applyAvatar = { ctx: Context, picture: android.graphics.Bitmap? ->
+            val avatar = CallerAvatarWimi.withAppBadge(ctx, picture, avatarSize)
+            if (useCallStyle) {
+                val person = Person.Builder()
+                    .setName(callerName)
+                    .setIcon(IconCompat.createWithBitmap(avatar))
+                    .setImportant(true)
+                    .build()
+                builder.setStyle(
+                    NotificationCompat.CallStyle.forIncomingCall(
+                        person, declinePendingIntent, acceptPendingIntent
+                    )
+                )
+            } else {
+                builder.setLargeIcon(avatar)
+            }
+        }
+        if (useCallStyle) {
+            val fullScreenPendingIntent = PendingIntent.getActivity(
+                context, notificationId,
+                CallkitIncomingActivityWimi.getIntent(context, data), getPendingIntentFlags()
+            )
+            builder.setFullScreenIntent(fullScreenPendingIntent, true)
+        } else {
+            builder.addAction(R.drawable.ic_decline, declineLabel, declinePendingIntent)
+                .addAction(R.drawable.ic_accept, acceptLabel, acceptPendingIntent)
+        }
+        applyAvatar(context, null)
+
         NotificationManagerCompat.from(context).notify(notificationId, builder.build())
+
+        val avatarUrl = data.getString(CallkitConstants.EXTRA_CALLKIT_AVATAR, "")
+        if (!avatarUrl.isNullOrEmpty() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            @Suppress("UNCHECKED_CAST")
+            val headers =
+                data.getSerializable(CallkitConstants.EXTRA_CALLKIT_HEADERS) as? HashMap<String, Any?>
+            val appContext = context.applicationContext
+            // Kept in a static field: Coil does not hold a strong reference to targets.
+            avatarTarget = SafeTarget(notificationId) { picture ->
+                val manager =
+                    appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                // Accepted, declined or timed out meanwhile: do not bring it back.
+                if (manager.activeNotifications.none { it.id == notificationId }) return@SafeTarget
+                applyAvatar(appContext, picture)
+                NotificationManagerCompat.from(appContext).notify(notificationId, builder.build())
+            }
+            ImageLoaderProvider.loadImage(appContext, avatarUrl, headers, avatarTarget)
+        }
     }
 
     private fun getPendingIntentFlags(): Int =

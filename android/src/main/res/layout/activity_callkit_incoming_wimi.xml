@@ -51,6 +51,18 @@
                 app:civ_border_color="#80ffffff"
                 app:civ_border_width="1dp" />
 
+            <!-- App icon badge (WhatsApp style), set from code: CallerAvatarWimi -->
+            <de.hdodenhof.circleimageview.CircleImageView
+                android:id="@+id/ivAvatarBadge"
+                android:layout_width="@dimen/size_avatar_badge"
+                android:layout_height="@dimen/size_avatar_badge"
+                android:layout_alignEnd="@id/ivAvatar"
+                android:layout_alignBottom="@id/ivAvatar"
+                android:visibility="invisible"
+                app:civ_border_color="@android:color/white"
+                app:civ_border_width="3dp"
+                tools:ignore="ContentDescription" />
+
             <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"

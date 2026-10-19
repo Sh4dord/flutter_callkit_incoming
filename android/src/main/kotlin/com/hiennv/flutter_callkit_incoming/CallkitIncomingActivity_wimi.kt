@@ -90,6 +90,7 @@ class CallkitIncomingActivityWimi : Activity() {
     private lateinit var tvNumber: TextView
     private lateinit var ivLogo: ImageView
     private lateinit var ivAvatar: CircleImageView
+    private lateinit var ivAvatarBadge: CircleImageView
 
     private lateinit var llAction: LinearLayout
     private lateinit var ivAcceptCall: ImageView
@@ -231,9 +232,15 @@ class CallkitIncomingActivityWimi : Activity() {
             ImageLoaderProvider.loadImage(this@CallkitIncomingActivityWimi, resolvedLogoUrl, headers, R.drawable.transparent, ivLogo)
         }
 
+        // WhatsApp style: always an avatar (default picture without URL), with the app badge.
+        ivAvatar.visibility = View.VISIBLE
+        CallerAvatarWimi.circularAppIcon(this, resources.getDimensionPixelSize(R.dimen.size_avatar_badge))
+            ?.let {
+                ivAvatarBadge.setImageBitmap(it)
+                ivAvatarBadge.visibility = View.VISIBLE
+            }
         var avatarUrl = data?.getString(CallkitConstants.EXTRA_CALLKIT_AVATAR, "")
         if (!avatarUrl.isNullOrEmpty()) {
-            ivAvatar.visibility = View.VISIBLE
             val resolvedAvatarUrl = resolveImageUrl(avatarUrl)
             val headers =
                 data?.getSerializable(CallkitConstants.EXTRA_CALLKIT_HEADERS) as HashMap<String, Any?>
@@ -309,6 +316,7 @@ class CallkitIncomingActivityWimi : Activity() {
         tvNumber = findViewById(R.id.tvNumber)
         ivLogo = findViewById(R.id.ivLogo)
         ivAvatar = findViewById(R.id.ivAvatar)
+        ivAvatarBadge = findViewById(R.id.ivAvatarBadge)
 
         llAction = findViewById(R.id.llAction)
 
