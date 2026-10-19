@@ -342,10 +342,14 @@ class FlutterCallkitIncoming {
         return CallEventActionCallToggleGroup(id, callUUIDToGroupWith);
       case CallEventConstants.actionCallToggleAudioSession:
         final body = data['body'] as Map<Object?, Object?>?;
-        final isActive = body?['isActive'] as bool?;
+        // iOS sends `isActivate` (with trailing V), not `isActive`. See
+        // SwiftFlutterCallkitIncomingPlugin.swift:
+        //   sendEvent(ACTION_CALL_TOGGLE_AUDIO_SESSION, [ "isActivate": ... ])
+        final isActive =
+            (body?['isActivate'] ?? body?['isActive']) as bool?;
         if (isActive == null) {
           throw const FormatException(
-              '[ACTION_CALL_TOGGLE_AUDIO_SESSION] id is null.');
+              '[ACTION_CALL_TOGGLE_AUDIO_SESSION] isActivate is null.');
         }
         return CallEventActionCallToggleAudioSession(isActive);
       case CallEventConstants.actionCallCustom:
